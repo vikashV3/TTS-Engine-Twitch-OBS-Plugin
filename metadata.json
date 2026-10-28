@@ -1,0 +1,6 @@
+{
+  "name": "VoxCraft AI - Neural TTS Engine & Voice Studio",
+  "description": "Professional Text-to-Speech engine and voice synthesis studio powered by Gemini 3.8 Audio models with real-time waveform visualization, emotional acting styles, dual-speaker dialogue, and WAV audio export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
