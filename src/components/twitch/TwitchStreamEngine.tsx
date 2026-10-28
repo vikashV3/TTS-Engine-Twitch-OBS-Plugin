@@ -25,11 +25,19 @@ import { synthesizeTTS, DEFAULT_VOICES } from '../../services/ttsService';
 import { playAlertChime } from '../../utils/audioUtils';
 import { AudioPlayerBar } from '../studio/AudioPlayerBar';
 
+import { SubtitleToggleSwitch } from '../common/SubtitleToggleSwitch';
+
 interface TwitchStreamEngineProps {
   voices: VoiceProfile[];
+  subtitlesEnabled?: boolean;
+  onToggleSubtitles?: () => void;
 }
 
-export const TwitchStreamEngine: React.FC<TwitchStreamEngineProps> = ({ voices = DEFAULT_VOICES }) => {
+export const TwitchStreamEngine: React.FC<TwitchStreamEngineProps> = ({
+  voices = DEFAULT_VOICES,
+  subtitlesEnabled = false,
+  onToggleSubtitles,
+}) => {
   const [channelInput, setChannelInput] = useState('');
   const [activeChannel, setActiveChannel] = useState('');
   const [connectionStatus, setConnectionStatus] = useState<'connected' | 'connecting' | 'disconnected'>('disconnected');
@@ -351,7 +359,14 @@ export const TwitchStreamEngine: React.FC<TwitchStreamEngineProps> = ({ voices =
           </div>
 
           {/* Quick Stats / State */}
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            {onToggleSubtitles && (
+              <SubtitleToggleSwitch
+                isEnabled={Boolean(subtitlesEnabled)}
+                onToggle={onToggleSubtitles}
+              />
+            )}
+
             <button
               onClick={() => setIsMuted(!isMuted)}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium text-xs transition-all cursor-pointer ${

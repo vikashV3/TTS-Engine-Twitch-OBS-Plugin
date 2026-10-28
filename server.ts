@@ -353,6 +353,90 @@ Speaker 1: [Turn text]
   }
 });
 
+// POST /api/transcribe
+// Transcribes uploaded or recorded audio buffer with gemini-3.5-transcribe
+app.post('/api/transcribe', async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!ai) {
+      res.status(500).json({ error: 'GEMINI_API_KEY is not configured on the server.' });
+      return;
+    }
+
+    const { audioBase64, mimeType = 'audio/webm', prompt = 'Transcribe this voice audio accurately with punctuation.' } = req.body;
+
+    if (!audioBase64 || typeof audioBase64 !== 'string') {
+      res.status(400).json({ error: 'audioBase64 is required.' });
+      return;
+    }
+
+    const audioPart = {
+      inlineData: {
+        mimeType,
+        data: audioBase64,
+      },
+    };
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.5-transcribe',
+      contents: {
+        parts: [audioPart, { text: prompt }],
+      },
+    });
+
+    const transcript = response.text?.trim() || '';
+
+    res.json({
+      success: true,
+      transcript,
+      modelUsed: 'gemini-3.5-transcribe',
+    });
+  } catch (err: unknown) {
+    console.error('Error in /api/transcribe:', err);
+    const message = err instanceof Error ? err.message : 'Transcription failed';
+    res.status(500).json({ error: message });
+  }
+});
+
+// POST /api/translate-subtitles
+// Translates live subtitles into another language for international Twitch viewers
+app.post('/api/translate-subtitles', async (req: Request, res: Response): Promise<void> => {
+  try {
+    if (!ai) {
+      res.status(500).json({ error: 'GEMINI_API_KEY is not configured on the server.' });
+      return;
+    }
+
+    const { text, targetLanguage = 'Spanish' } = req.body;
+
+    if (!text || typeof text !== 'string') {
+      res.status(400).json({ error: 'Text is required.' });
+      return;
+    }
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: `Translate the following live subtitle phrase spoken on stream into ${targetLanguage}.
+Keep it punchy, conversational, and natural for stream captions.
+Do not wrap in quotes or add commentary. Return ONLY the translated subtitle text.
+
+Subtitle:
+"${text.trim()}"`,
+    });
+
+    const translation = response.text?.trim() || text;
+
+    res.json({
+      success: true,
+      translatedText: translation,
+      targetLanguage,
+    });
+  } catch (err: unknown) {
+    console.error('Error in /api/translate-subtitles:', err);
+    const message = err instanceof Error ? err.message : 'Subtitle translation failed';
+    res.status(500).json({ error: message });
+  }
+});
+
 // Start Express + Vite
 async function start() {
   const isProd = process.env.NODE_ENV === 'production';

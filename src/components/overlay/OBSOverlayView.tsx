@@ -1,14 +1,47 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Volume2, Coins, Crown, MessageSquare, Sparkles } from 'lucide-react';
+import { Volume2, Coins, Crown, MessageSquare, Mic } from 'lucide-react';
 import { twitchClient, ParsedTwitchMessage } from '../../services/twitchIrcService';
 import { synthesizeTTS } from '../../services/ttsService';
 import { playAlertChime } from '../../utils/audioUtils';
+import { liveSubtitlesEngine } from '../../services/speechRecognitionService';
+import { SubtitleCardRenderer } from '../subtitles/SubtitleCardRenderer';
+import { SubtitleConfig, SubtitleVisualTheme } from '../../types/tts';
 
 interface OBSOverlayViewProps {
   channelName?: string;
+  isCaptionsMode?: boolean;
 }
 
-export const OBSOverlayView: React.FC<OBSOverlayViewProps> = ({ channelName = '' }) => {
+export const OBSOverlayView: React.FC<OBSOverlayViewProps> = ({
+  channelName = '',
+  isCaptionsMode = false,
+}) => {
+  const urlParams = new URLSearchParams(window.location.search);
+  const themeParam = (urlParams.get('theme') as SubtitleVisualTheme) || 'cyberpunk';
+  const sizeParam = (urlParams.get('size') as SubtitleConfig['fontSize']) || 'lg';
+  const langParam = urlParams.get('lang') || 'none';
+
+  // Subtitle config from query params
+  const [subConfig] = useState<SubtitleConfig>({
+    theme: themeParam,
+    fontSize: sizeParam,
+    textTransform: themeParam === 'tiktok' ? 'uppercase' : 'none',
+    censorProfanity: true,
+    autoHideSeconds: 4,
+    streamerName: 'STREAMER',
+    targetLanguage: langParam,
+    showWordHighlight: true,
+    micSensitivity: 80,
+    showSpeakerBadge: true,
+  });
+
+  // Subtitle state
+  const [interimSub, setInterimSub] = useState('');
+  const [latestSub, setLatestSub] = useState('');
+  const [translation, setTranslation] = useState<string | undefined>(undefined);
+  const [isCaptionsActive, setIsCaptionsActive] = useState(false);
+
+  // Twitch alert state
   const [activeAlert, setActiveAlert] = useState<{
     id: string;
     username: string;
@@ -30,9 +63,35 @@ export const OBSOverlayView: React.FC<OBSOverlayViewProps> = ({ channelName = ''
   const isProcessingRef = useRef(false);
 
   useEffect(() => {
-    // Ensure transparent background for OBS browser source
+    // Transparent background for OBS Browser Source
     document.documentElement.style.background = 'transparent';
     document.body.style.background = 'transparent';
+
+    // If Captions mode or combined captions
+    if (isCaptionsMode || urlParams.get('captions') === 'true') {
+      liveSubtitlesEngine.start().then(() => setIsCaptionsActive(true)).catch((err) => {
+        console.warn('Microphone start error in OBS overlay:', err);
+      });
+
+      const unsubSubs = liveSubtitlesEngine.onSubtitles((interim, finals) => {
+        setInterimSub(interim);
+        if (finals.length > 0) {
+          const last = finals[finals.length - 1];
+          setLatestSub(last.text);
+          if (last.translation) setTranslation(last.translation);
+        }
+      });
+
+      return () => {
+        unsubSubs();
+        liveSubtitlesEngine.stop();
+      };
+    }
+  }, [isCaptionsMode]);
+
+  useEffect(() => {
+    // Only connect Twitch if in Twitch mode or combined
+    if (isCaptionsMode && !channelName) return;
 
     const audio = new Audio();
     audio.onended = () => {
@@ -85,7 +144,7 @@ export const OBSOverlayView: React.FC<OBSOverlayViewProps> = ({ channelName = ''
       unsubMsg();
       twitchClient.disconnect();
     };
-  }, [channelName]);
+  }, [channelName, isCaptionsMode]);
 
   const processNextInQueue = async () => {
     if (isProcessingRef.current || queueRef.current.length === 0) return;
@@ -125,25 +184,49 @@ export const OBSOverlayView: React.FC<OBSOverlayViewProps> = ({ channelName = ''
     }
   };
 
-  // Test button inside OBS preview (or keyboard shortcut 'T')
-  const testAlert = () => {
-    queueRef.current.push({
-      username: 'TwitchViewer',
-      message: 'GG streamer! That was an incredible 1v4 clutch play!',
-      type: 'bits',
-      bitsAmount: 250,
-      voice: 'Puck',
-    });
-    processNextInQueue();
-  };
+  // If Pure Captions Overlay Mode: Render clean transparent subtitles
+  if (isCaptionsMode) {
+    return (
+      <div className="relative w-full h-full min-h-[160px] flex items-center justify-center p-4 bg-transparent select-none overflow-hidden font-sans">
+        <SubtitleCardRenderer
+          text={latestSub}
+          interimText={interimSub}
+          translation={translation}
+          config={subConfig}
+          isActive={isCaptionsActive}
+        />
+      </div>
+    );
+  }
 
+  // Combined or Twitch Alert Mode
   return (
-    <div className="relative w-full h-full min-h-[220px] flex items-center justify-center p-4 bg-transparent select-none overflow-hidden font-sans">
+    <div className="relative w-full h-full min-h-[220px] flex flex-col items-center justify-center p-4 bg-transparent select-none overflow-hidden font-sans gap-3">
+      {/* Subtitles if enabled */}
+      {(latestSub || interimSub) && (
+        <div className="animate-in fade-in duration-200">
+          <SubtitleCardRenderer
+            text={latestSub}
+            interimText={interimSub}
+            translation={translation}
+            config={subConfig}
+            isActive={true}
+          />
+        </div>
+      )}
+
+      {/* Twitch TTS Alert */}
       {activeAlert ? (
         <div className="flex items-center gap-4 max-w-xl w-full p-4 rounded-2xl bg-slate-950/90 border border-purple-500/50 shadow-2xl backdrop-blur-xl animate-in fade-in zoom-in-95 duration-300">
           {/* Avatar with pulsing speech glow */}
           <div className="relative flex-shrink-0">
-            <div className={`w-14 h-14 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center text-white shadow-lg ${isPlaying ? 'ring-4 ring-purple-400 ring-offset-2 ring-offset-slate-950 animate-pulse' : ''}`}>
+            <div
+              className={`w-14 h-14 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-500 flex items-center justify-center text-white shadow-lg ${
+                isPlaying
+                  ? 'ring-4 ring-purple-400 ring-offset-2 ring-offset-slate-950 animate-pulse'
+                  : ''
+              }`}
+            >
               {activeAlert.type === 'bits' ? (
                 <Coins className="w-7 h-7 text-amber-300" />
               ) : activeAlert.type === 'sub' ? (
@@ -198,9 +281,9 @@ export const OBSOverlayView: React.FC<OBSOverlayViewProps> = ({ channelName = ''
           </div>
         </div>
       ) : (
-        <div className="group flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950/40 border border-slate-800/40 text-slate-400 hover:text-white transition-opacity text-xs opacity-40 hover:opacity-100 cursor-pointer" onClick={testAlert}>
+        <div className="group flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950/40 border border-slate-800/40 text-slate-400 hover:text-white transition-opacity text-xs opacity-40 hover:opacity-100 cursor-pointer">
           <Volume2 className="w-3.5 h-3.5 text-purple-400" />
-          <span>OBS Overlay Active: #{channelName || 'stream'} (Click to Test)</span>
+          <span>OBS Overlay Active: #{channelName || 'stream'}</span>
         </div>
       )}
     </div>

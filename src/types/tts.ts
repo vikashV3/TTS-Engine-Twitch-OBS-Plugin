@@ -88,3 +88,27 @@ export interface TwitchQueueItem {
   audioUrl?: string;
   voiceUsed?: string;
 }
+
+export type SubtitleVisualTheme = 'cyberpunk' | 'classic' | 'tiktok' | 'minimal' | 'neon';
+
+export interface SubtitleConfig {
+  theme: SubtitleVisualTheme;
+  fontSize: 'sm' | 'md' | 'lg' | 'xl';
+  textTransform: 'uppercase' | 'capitalize' | 'none';
+  censorProfanity: boolean;
+  autoHideSeconds: number; // 0 = never hide, or 3, 5, 8
+  streamerName: string;
+  targetLanguage: string; // 'none' or 'Spanish', 'French', etc.
+  showWordHighlight: boolean;
+  micSensitivity: number;
+  showSpeakerBadge: boolean;
+}
+
+export interface SubtitleEntry {
+  id: string;
+  text: string;
+  translation?: string;
+  timestamp: number;
+  isFinal: boolean;
+  confidence?: number;
+}

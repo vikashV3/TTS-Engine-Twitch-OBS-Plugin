@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Header, AppTab } from './components/common/Header';
 import { TTSStudio } from './components/studio/TTSStudio';
 import { TwitchStreamEngine } from './components/twitch/TwitchStreamEngine';
+import { LiveSubtitlesStudio } from './components/subtitles/LiveSubtitlesStudio';
 import { DialogueStudio } from './components/dialogue/DialogueStudio';
 import { SoundboardView } from './components/soundboard/SoundboardView';
 import { OBSOverlayView } from './components/overlay/OBSOverlayView';
@@ -9,6 +10,7 @@ import { HistoryModal } from './components/common/HistoryModal';
 import { VoiceProfile, AudioHistoryItem } from './types/tts';
 import { fetchVoices, DEFAULT_VOICES } from './services/ttsService';
 import { twitchClient } from './services/twitchIrcService';
+import { liveSubtitlesEngine } from './services/speechRecognitionService';
 
 export default function App() {
   const [currentTab, setCurrentTab] = useState<AppTab>('studio');
@@ -16,10 +18,13 @@ export default function App() {
   const [history, setHistory] = useState<AudioHistoryItem[]>([]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [twitchChannel, setTwitchChannel] = useState<string>('');
+  const [subtitlesEnabled, setSubtitlesEnabled] = useState<boolean>(false);
 
-  // Check if loaded in OBS Studio Browser Source mode: ?mode=obs-overlay&channel=...
+  // Check URL query parameters for OBS Browser Source modes
   const urlParams = new URLSearchParams(window.location.search);
-  const isObsOverlay = urlParams.get('mode') === 'obs-overlay';
+  const mode = urlParams.get('mode');
+  const isObsAlertsOverlay = mode === 'obs-overlay';
+  const isCaptionsOverlay = mode === 'captions-overlay';
   const obsChannel = urlParams.get('channel') || '';
 
   useEffect(() => {
@@ -27,7 +32,7 @@ export default function App() {
       if (res && res.length > 0) setVoices(res);
     });
 
-    const unsub = twitchClient.onStatus((status) => {
+    const unsubTwitch = twitchClient.onStatus((status) => {
       if (status === 'connected') {
         setTwitchChannel(twitchClient.getChannel());
       } else {
@@ -35,27 +40,56 @@ export default function App() {
       }
     });
 
-    return () => unsub();
+    const unsubSubtitles = liveSubtitlesEngine.onStatus((isActive) => {
+      setSubtitlesEnabled(isActive);
+    });
+
+    return () => {
+      unsubTwitch();
+      unsubSubtitles();
+    };
   }, []);
 
   const handleAddHistory = (item: AudioHistoryItem) => {
     setHistory((prev) => [item, ...prev].slice(0, 50));
   };
 
-  // If OBS Overlay Browser Source
-  if (isObsOverlay) {
+  // Global subtitle toggle switch handler
+  const handleToggleSubtitles = async () => {
+    if (subtitlesEnabled) {
+      liveSubtitlesEngine.stop();
+      setSubtitlesEnabled(false);
+    } else {
+      try {
+        await liveSubtitlesEngine.start();
+        setSubtitlesEnabled(true);
+      } catch (err) {
+        console.warn('Failed to start speech subtitles:', err);
+        setSubtitlesEnabled(false);
+      }
+    }
+  };
+
+  // OBS Dedicated Overlays (Transparent backgrounds for OBS Studio)
+  if (isCaptionsOverlay) {
+    return <OBSOverlayView isCaptionsMode={true} />;
+  }
+
+  if (isObsAlertsOverlay) {
     return <OBSOverlayView channelName={obsChannel} />;
   }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-cyan-500 selection:text-slate-950">
-      {/* Navigation Header */}
+      {/* Navigation Header with persistent Subtitles Toggle Switch */}
       <Header
         currentTab={currentTab}
         onSelectTab={setCurrentTab}
         historyCount={history.length}
         onOpenHistory={() => setIsHistoryOpen(true)}
         twitchConnectedChannel={twitchChannel}
+        subtitlesEnabled={subtitlesEnabled}
+        onToggleSubtitles={handleToggleSubtitles}
       />
 
       {/* Main Content Area */}
@@ -69,7 +103,15 @@ export default function App() {
         )}
 
         {currentTab === 'twitch' && (
-          <TwitchStreamEngine voices={voices} />
+          <TwitchStreamEngine
+            voices={voices}
+            subtitlesEnabled={subtitlesEnabled}
+            onToggleSubtitles={handleToggleSubtitles}
+          />
+        )}
+
+        {currentTab === 'subtitles' && (
+          <LiveSubtitlesStudio />
         )}
 
         {currentTab === 'dialogue' && (
@@ -97,10 +139,10 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-cyan-400" />
-            <span>VoxCraft TTS Engine • 24kHz Mono 16-bit PCM Audio</span>
+            <span>VoxCraft TTS Engine • Live Voice Subtitles & Twitch Stream Engine</span>
           </div>
           <div>
-            Built with Gemini 3.8 Audio Models & Twitch IRC Live Streamer Protocol
+            Built with Gemini 3.8 Audio Models, Web Speech API & Twitch IRC Live Protocol
           </div>
         </div>
       </footer>
